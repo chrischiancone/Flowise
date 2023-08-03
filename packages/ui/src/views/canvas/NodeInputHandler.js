@@ -7,7 +7,7 @@ import { useSelector } from 'react-redux'
 import { useTheme, styled } from '@mui/material/styles'
 import { Box, Typography, Tooltip, IconButton, Button } from '@mui/material'
 import { tooltipClasses } from '@mui/material/Tooltip'
-import { IconArrowsMaximize, IconEdit } from '@tabler/icons'
+import { IconArrowsMaximize, IconEdit, IconAlertTriangle } from '@tabler/icons'
 
 // project import
 import { Dropdown } from 'ui-component/dropdown/Dropdown'
@@ -21,8 +21,13 @@ import { JsonEditorInput } from 'ui-component/json/JsonEditor'
 import { TooltipWithParser } from 'ui-component/tooltip/TooltipWithParser'
 import ToolDialog from 'views/tools/ToolDialog'
 import FormatPromptValuesDialog from 'ui-component/dialog/FormatPromptValuesDialog'
+import CredentialInputHandler from './CredentialInputHandler'
 
+// utils
 import { getInputVariables } from 'utils/genericHelper'
+
+// const
+import { FLOWISE_CREDENTIAL_ID } from 'store/constant'
 
 const EDITABLE_TOOLS = ['selectedTool']
 
@@ -210,6 +215,33 @@ const NodeInputHandler = ({ inputAnchor, inputParam, data, disabled = false, isA
                                 </IconButton>
                             )}
                         </div>
+                        {inputParam.warning && (
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    flexDirection: 'row',
+                                    borderRadius: 10,
+                                    background: 'rgb(254,252,191)',
+                                    padding: 10,
+                                    marginTop: 10,
+                                    marginBottom: 10
+                                }}
+                            >
+                                <IconAlertTriangle size={36} color='orange' />
+                                <span style={{ color: 'rgb(116,66,16)', marginLeft: 10 }}>{inputParam.warning}</span>
+                            </div>
+                        )}
+                        {inputParam.type === 'credential' && (
+                            <CredentialInputHandler
+                                disabled={disabled}
+                                data={data}
+                                inputParam={inputParam}
+                                onSelect={(newValue) => {
+                                    data.credential = newValue
+                                    data.inputs[FLOWISE_CREDENTIAL_ID] = newValue // in case data.credential is not updated
+                                }}
+                            />
+                        )}
                         {inputParam.type === 'file' && (
                             <File
                                 disabled={disabled}
