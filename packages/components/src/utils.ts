@@ -7,7 +7,6 @@ import { z } from 'zod'
 import { DataSource } from 'typeorm'
 import { ICommonObject, IDatabaseEntity, IMessage, INodeData, IVariable } from './Interface'
 import { AES, enc } from 'crypto-js'
-import { ChatMessageHistory } from 'langchain/memory'
 import { AIMessage, HumanMessage, BaseMessage } from '@langchain/core/messages'
 
 export const numberOrExpressionRegex = '^(\\d+\\.?\\d*|{{.*}})$' //return true if string consists only numbers OR expression {{}}
@@ -25,6 +24,7 @@ export const availableDependencies = [
     '@gomomento/sdk',
     '@gomomento/sdk-core',
     '@google-ai/generativelanguage',
+    '@google/generative-ai',
     '@huggingface/inference',
     '@notionhq/client',
     '@opensearch-project/opensearch',
@@ -48,6 +48,7 @@ export const availableDependencies = [
     'langchain',
     'langfuse',
     'langsmith',
+    'langwatch',
     'linkifyjs',
     'lunary',
     'mammoth',
@@ -290,22 +291,12 @@ function getURLsFromHTML(htmlBody: string, baseURL: string): string[] {
     const linkElements = dom.window.document.querySelectorAll('a')
     const urls: string[] = []
     for (const linkElement of linkElements) {
-        if (linkElement.href.slice(0, 1) === '/') {
-            try {
-                const urlObj = new URL(baseURL + linkElement.href)
-                urls.push(urlObj.href) //relative
-            } catch (err) {
-                if (process.env.DEBUG === 'true') console.error(`error with relative url: ${err.message}`)
-                continue
-            }
-        } else {
-            try {
-                const urlObj = new URL(linkElement.href)
-                urls.push(urlObj.href) //absolute
-            } catch (err) {
-                if (process.env.DEBUG === 'true') console.error(`error with absolute url: ${err.message}`)
-                continue
-            }
+        try {
+            const urlObj = new URL(linkElement.href, baseURL)
+            urls.push(urlObj.href)
+        } catch (err) {
+            if (process.env.DEBUG === 'true') console.error(`error with scraped URL: ${err.message}`)
+            continue
         }
     }
     return urls
@@ -318,7 +309,7 @@ function getURLsFromHTML(htmlBody: string, baseURL: string): string[] {
  */
 function normalizeURL(urlString: string): string {
     const urlObj = new URL(urlString)
-    const hostPath = urlObj.hostname + urlObj.pathname
+    const hostPath = urlObj.hostname + urlObj.pathname + urlObj.search
     if (hostPath.length > 0 && hostPath.slice(-1) == '/') {
         // handling trailing slash
         return hostPath.slice(0, -1)
@@ -365,7 +356,7 @@ async function crawl(baseURL: string, currentURL: string, pages: string[], limit
         }
 
         const htmlBody = await resp.text()
-        const nextURLs = getURLsFromHTML(htmlBody, baseURL)
+        const nextURLs = getURLsFromHTML(htmlBody, currentURL)
         for (const nextURL of nextURLs) {
             pages = await crawl(baseURL, nextURL, pages, limit)
         }
@@ -586,22 +577,21 @@ export const getUserHome = (): string => {
 }
 
 /**
- * Map incoming chat history to ChatMessageHistory
- * @param {ICommonObject} options
- * @returns {ChatMessageHistory}
+ * Map ChatMessage to BaseMessage
+ * @param {IChatMessage[]} chatmessages
+ * @returns {BaseMessage[]}
  */
-export const mapChatHistory = (options: ICommonObject): ChatMessageHistory => {
+export const mapChatMessageToBaseMessage = (chatmessages: any[] = []): BaseMessage[] => {
     const chatHistory = []
-    const histories: IMessage[] = options.chatHistory ?? []
 
-    for (const message of histories) {
-        if (message.type === 'apiMessage') {
-            chatHistory.push(new AIMessage(message.message))
-        } else if (message.type === 'userMessage') {
-            chatHistory.push(new HumanMessage(message.message))
+    for (const message of chatmessages) {
+        if (message.role === 'apiMessage') {
+            chatHistory.push(new AIMessage(message.content))
+        } else if (message.role === 'userMessage') {
+            chatHistory.push(new HumanMessage(message.content))
         }
     }
-    return new ChatMessageHistory(chatHistory)
+    return chatHistory
 }
 
 /**
@@ -625,7 +615,7 @@ export const convertChatHistoryToText = (chatHistory: IMessage[] = []): string =
 
 /**
  * Serialize array chat history to string
- * @param {IMessage[]} chatHistory
+ * @param {string | Array<string>} chatHistory
  * @returns {string}
  */
 export const serializeChatHistory = (chatHistory: string | Array<string>) => {
@@ -670,6 +660,8 @@ export const convertSchemaToZod = (schema: string | object): ICommonObject => {
  */
 export const flattenObject = (obj: ICommonObject, parentKey?: string) => {
     let result: any = {}
+
+    if (!obj) return result
 
     Object.keys(obj).forEach((key) => {
         const value = obj[key]
@@ -779,4 +771,29 @@ export const prepareSandboxVars = (variables: IVariable[]) => {
         }
     }
     return vars
+}
+
+let version: string
+export const getVersion: () => Promise<{ version: string }> = async () => {
+    if (version != null) return { version }
+
+    const checkPaths = [
+        path.join(__dirname, '..', 'package.json'),
+        path.join(__dirname, '..', '..', 'package.json'),
+        path.join(__dirname, '..', '..', '..', 'package.json'),
+        path.join(__dirname, '..', '..', '..', '..', 'package.json'),
+        path.join(__dirname, '..', '..', '..', '..', '..', 'package.json')
+    ]
+    for (const checkPath of checkPaths) {
+        try {
+            const content = await fs.promises.readFile(checkPath, 'utf8')
+            const parsedContent = JSON.parse(content)
+            version = parsedContent.version
+            return { version }
+        } catch {
+            continue
+        }
+    }
+
+    throw new Error('None of the package.json paths could be parsed')
 }
