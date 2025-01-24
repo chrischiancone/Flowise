@@ -1,26 +1,19 @@
-import moment from 'moment'
 import { uniq } from 'lodash'
+import moment from 'moment'
 
 export const getUniqueNodeId = (nodeData, nodes) => {
-    // Get amount of same nodes
-    let totalSameNodes = 0
-    for (let i = 0; i < nodes.length; i += 1) {
-        const node = nodes[i]
-        if (node.data.name === nodeData.name) {
-            totalSameNodes += 1
-        }
+    let suffix = 0
+
+    // Construct base ID
+    let baseId = `${nodeData.name}_${suffix}`
+
+    // Increment suffix until a unique ID is found
+    while (nodes.some((node) => node.id === baseId)) {
+        suffix += 1
+        baseId = `${nodeData.name}_${suffix}`
     }
 
-    // Get unique id
-    let nodeId = `${nodeData.name}_${totalSameNodes}`
-    for (let i = 0; i < nodes.length; i += 1) {
-        const node = nodes[i]
-        if (node.id === nodeId) {
-            totalSameNodes += 1
-            nodeId = `${nodeData.name}_${totalSameNodes}`
-        }
-    }
-    return nodeId
+    return baseId
 }
 
 export const initializeDefaultNodeData = (nodeParams) => {
@@ -207,6 +200,15 @@ export const updateOutdatedNodeData = (newComponentNodeData, existingComponentNo
             }
         }
     }
+    // Check for tabs
+    const inputParamsWithTabIdentifiers = initNewComponentNodeData.inputParams.filter((param) => param.tabIdentifier) || []
+
+    for (const inputParam of inputParamsWithTabIdentifiers) {
+        const tabIdentifier = `${inputParam.tabIdentifier}_${existingComponentNodeData.id}`
+        let selectedTabValue = existingComponentNodeData.inputs[tabIdentifier] || inputParam.default
+        initNewComponentNodeData.inputs[tabIdentifier] = selectedTabValue
+        initNewComponentNodeData.inputs[selectedTabValue] = existingComponentNodeData.inputs[selectedTabValue]
+    }
 
     // Update outputs with existing outputs
     if (existingComponentNodeData.outputs) {
@@ -215,6 +217,24 @@ export const updateOutdatedNodeData = (newComponentNodeData, existingComponentNo
                 initNewComponentNodeData.outputs[key] = existingComponentNodeData.outputs[key]
             }
         }
+    }
+
+    // Special case for Condition node to update outputAnchors
+    if (initNewComponentNodeData.name.includes('seqCondition')) {
+        const options = existingComponentNodeData.outputAnchors[0].options || []
+
+        const newOptions = []
+        for (let i = 0; i < options.length; i += 1) {
+            if (options[i].isAnchor) {
+                newOptions.push({
+                    ...options[i],
+                    id: `${initNewComponentNodeData.id}-output-${options[i].name}-Condition`,
+                    type: 'Condition'
+                })
+            }
+        }
+
+        initNewComponentNodeData.outputAnchors[0].options = newOptions
     }
 
     return initNewComponentNodeData
@@ -346,18 +366,6 @@ export const getFolderName = (base64ArrayStr) => {
     }
 }
 
-export const sanitizeChatflows = (arrayChatflows) => {
-    const sanitizedChatflows = arrayChatflows.map((chatFlow) => {
-        const sanitizeFlowData = generateExportFlowData(JSON.parse(chatFlow.flowData))
-        return {
-            id: chatFlow.id,
-            name: chatFlow.name,
-            flowData: JSON.stringify(sanitizeFlowData, null, 2)
-        }
-    })
-    return sanitizedChatflows
-}
-
 export const generateExportFlowData = (flowData) => {
     const nodes = flowData.nodes
     const edges = flowData.edges
@@ -427,7 +435,7 @@ export const getAvailableNodesForVariable = (nodes, edges, target, targetHandle)
             collectParentNodes(parentNode.id, nodes, edges)
 
             // Check and add the parent node to the list if it does not include specific names
-            const excludeNodeNames = ['seqAgent', 'seqLLMNode', 'seqToolNode']
+            const excludeNodeNames = ['seqAgent', 'seqLLMNode', 'seqToolNode', 'seqCustomFunction', 'seqExecuteFlow']
             if (excludeNodeNames.includes(parentNode.data.name)) {
                 parentNodes.push(parentNode)
             }
@@ -561,32 +569,24 @@ export const generateRandomGradient = () => {
     return gradient
 }
 
-export const getInputVariables = (paramValue) => {
-    let returnVal = paramValue
-    const variableStack = []
-    const inputVariables = []
-    let startIdx = 0
-    const endIdx = returnVal.length
+export const getInputVariables = (input) => {
+    // This regex will match single curly-braced substrings
+    const pattern = /\{([^{}]+)\}/g
+    const results = []
 
-    while (startIdx < endIdx) {
-        const substr = returnVal.substring(startIdx, startIdx + 1)
+    let match
 
-        // Store the opening double curly bracket
-        if (substr === '{') {
-            variableStack.push({ substr, startIdx: startIdx + 1 })
+    while ((match = pattern.exec(input)) !== null) {
+        const inside = match[1].trim()
+
+        // Check if there's a colon
+        if (!inside.includes(':')) {
+            // If there's no colon, add to results
+            results.push(inside)
         }
-
-        // Found the complete variable
-        if (substr === '}' && variableStack.length > 0 && variableStack[variableStack.length - 1].substr === '{') {
-            const variableStartIdx = variableStack[variableStack.length - 1].startIdx
-            const variableEndIdx = startIdx
-            const variableFullPath = returnVal.substring(variableStartIdx, variableEndIdx)
-            inputVariables.push(variableFullPath)
-            variableStack.pop()
-        }
-        startIdx += 1
     }
-    return inputVariables
+
+    return results
 }
 
 export const removeDuplicateURL = (message) => {
@@ -831,7 +831,7 @@ const createJsonArray = (labels) => {
         return {
             label: label,
             name: toCamelCase(label),
-            baseClasses: ['Agent', 'LLMNode', 'ToolNode'],
+            baseClasses: ['Condition'],
             isAnchor: true
         }
     })

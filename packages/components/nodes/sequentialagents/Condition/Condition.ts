@@ -90,17 +90,19 @@ class Condition_SeqAgents implements INode {
     baseClasses: string[]
     credential: INodeParams
     inputs: INodeParams[]
+    documentation?: string
     outputs: INodeOutputsValue[]
 
     constructor() {
         this.label = 'Condition'
         this.name = 'seqCondition'
-        this.version = 1.0
+        this.version = 2.1
         this.type = 'Condition'
         this.icon = 'condition.svg'
         this.category = 'Sequential Agents'
         this.description = 'Conditional function to determine which route to take next'
         this.baseClasses = [this.type]
+        this.documentation = 'https://docs.flowiseai.com/using-flowise/agentflows/sequential-agents#id-7.-conditional-node'
         this.inputs = [
             {
                 label: 'Condition Name',
@@ -110,9 +112,11 @@ class Condition_SeqAgents implements INode {
                 placeholder: 'If X, then Y'
             },
             {
-                label: 'Start | Agent | LLM | Tool Node',
+                label: 'Sequential Node',
                 name: 'sequentialNode',
-                type: 'Start | Agent | LLMNode | ToolNode',
+                type: 'Start | Agent | LLMNode | ToolNode | CustomFunction | ExecuteFlow',
+                description:
+                    'Can be connected to one of the following nodes: Start, Agent, LLM Node, Tool Node, Custom Function, Execute Flow',
                 list: true
             },
             {
@@ -214,13 +218,13 @@ class Condition_SeqAgents implements INode {
             {
                 label: 'Next',
                 name: 'next',
-                baseClasses: ['Agent', 'LLMNode', 'ToolNode'],
+                baseClasses: ['Condition'],
                 isAnchor: true
             },
             {
                 label: 'End',
                 name: 'end',
-                baseClasses: ['Agent', 'LLMNode', 'ToolNode'],
+                baseClasses: ['Condition'],
                 isAnchor: true
             }
         ]
